@@ -71,32 +71,130 @@ static const sh8601_lcd_init_cmd_t vendor_specific_init[] = {
 
 // 在waveshare_amoled_1_8类之前添加新的显示类
 class CustomLcdDisplay : public SpiLcdDisplay {
+private:
+    lv_obj_t* pico_bg_ = nullptr;
+    lv_obj_t* eye_left_ = nullptr;
+    lv_obj_t* eye_right_ = nullptr;
+    lv_obj_t* pupil_left_ = nullptr;
+    lv_obj_t* pupil_right_ = nullptr;
+    lv_obj_t* status_ring_ = nullptr;
+    lv_obj_t* sub_label_ = nullptr;
+
+    void UpdatePicoColor(lv_color_t main_col, int w, int h, int radius, int tilt) {
+        if (!eye_left_ || !eye_right_) return;
+        lv_obj_set_size(eye_left_, w, h);
+        lv_obj_set_size(eye_right_, w, h);
+        lv_obj_set_style_radius(eye_left_, radius, 0);
+        lv_obj_set_style_radius(eye_right_, radius, 0);
+        lv_obj_set_style_bg_color(eye_left_, main_col, 0);
+        lv_obj_set_style_bg_color(eye_right_, main_col, 0);
+        lv_obj_set_style_shadow_color(eye_left_, main_col, 0);
+        lv_obj_set_style_shadow_color(eye_right_, main_col, 0);
+        lv_obj_set_style_transform_rotation(eye_left_, tilt, 0);
+        lv_obj_set_style_transform_rotation(eye_right_, -tilt, 0);
+    }
+
 public:
     CustomLcdDisplay(esp_lcd_panel_io_handle_t io_handle,
                     esp_lcd_panel_handle_t panel_handle,
-                    int width,
-                    int height,
-                    int offset_x,
-                    int offset_y,
-                    bool mirror_x,
-                    bool mirror_y,
-                    bool swap_xy)
+                    int width, int height, int offset_x, int offset_y,
+                    bool mirror_x, bool mirror_y, bool swap_xy)
         : SpiLcdDisplay(io_handle, panel_handle,
-                    width, height, offset_x, offset_y, mirror_x, mirror_y, swap_xy) {
-        // Note: UI customization should be done in SetupUI(), not in constructor
-        // to ensure lvgl objects are created before accessing them
-    }
+                    width, height, offset_x, offset_y, mirror_x, mirror_y, swap_xy) {}
 
     virtual void SetupUI() override {
-        // Call parent SetupUI() first to create all lvgl objects
         SpiLcdDisplay::SetupUI();
-
         DisplayLockGuard lock(this);
-        lv_obj_set_style_pad_left(status_bar_, LV_HOR_RES * 0.1, 0);
-        lv_obj_set_style_pad_right(status_bar_, LV_HOR_RES * 0.1, 0);
+
+        lv_obj_t* scr = lv_scr_act();
+        pico_bg_ = lv_obj_create(scr);
+        lv_obj_remove_style_all(pico_bg_);
+        lv_obj_set_size(pico_bg_, LV_HOR_RES, LV_VER_RES);
+        lv_obj_set_style_bg_color(pico_bg_, lv_color_hex(0x000000), 0);
+        lv_obj_set_style_bg_opa(pico_bg_, LV_OPA_COVER, 0);
+
+        status_ring_ = lv_arc_create(pico_bg_);
+        lv_obj_set_size(status_ring_, 330, 330);
+        lv_obj_center(status_ring_);
+        lv_arc_set_bg_angles(status_ring_, 0, 360);
+        lv_arc_set_angles(status_ring_, 210, 330);
+        lv_obj_remove_style(status_ring_, NULL, LV_PART_KNOB);
+        lv_obj_set_style_arc_width(status_ring_, 6, LV_PART_MAIN);
+        lv_obj_set_style_arc_width(status_ring_, 6, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_color(status_ring_, lv_color_hex(0x0A192F), LV_PART_MAIN);
+        lv_obj_set_style_arc_color(status_ring_, lv_color_hex(0x38BDF8), LV_PART_INDICATOR);
+
+        auto create_eye = [&](int x_off) {
+            lv_obj_t* eye = lv_obj_create(pico_bg_);
+            lv_obj_remove_style_all(eye);
+            lv_obj_set_size(eye, 72, 92);
+            lv_obj_align(eye, LV_ALIGN_CENTER, x_off, -10);
+            lv_obj_set_style_radius(eye, 36, 0);
+            lv_obj_set_style_bg_color(eye, lv_color_hex(0x38BDF8), 0);
+            lv_obj_set_style_bg_opa(eye, LV_OPA_COVER, 0);
+            lv_obj_set_style_shadow_width(eye, 28, 0);
+            lv_obj_set_style_shadow_color(eye, lv_color_hex(0x38BDF8), 0);
+            lv_obj_set_style_shadow_opa(eye, LV_OPA_70, 0);
+            return eye;
+        };
+
+        eye_left_ = create_eye(-66);
+        eye_right_ = create_eye(66);
+
+        pupil_left_ = lv_obj_create(eye_left_);
+        lv_obj_remove_style_all(pupil_left_);
+        lv_obj_set_size(pupil_left_, 24, 34);
+        lv_obj_center(pupil_left_);
+        lv_obj_set_style_radius(pupil_left_, 12, 0);
+        lv_obj_set_style_bg_color(pupil_left_, lv_color_hex(0xFACC15), 0);
+        lv_obj_set_style_bg_opa(pupil_left_, LV_OPA_COVER, 0);
+
+        pupil_right_ = lv_obj_create(eye_right_);
+        lv_obj_remove_style_all(pupil_right_);
+        lv_obj_set_size(pupil_right_, 24, 34);
+        lv_obj_center(pupil_right_);
+        lv_obj_set_style_radius(pupil_right_, 12, 0);
+        lv_obj_set_style_bg_color(pupil_right_, lv_color_hex(0xFACC15), 0);
+        lv_obj_set_style_bg_opa(pupil_right_, LV_OPA_COVER, 0);
+
+        sub_label_ = lv_label_create(pico_bg_);
+        lv_obj_set_width(sub_label_, 300);
+        lv_obj_align(sub_label_, LV_ALIGN_BOTTOM_MID, 0, -28);
+        lv_obj_set_style_text_align(sub_label_, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(sub_label_, lv_color_hex(0xBAE6FD), 0);
+        lv_label_set_text(sub_label_, "PICO READY");
+    }
+
+    virtual void SetEmotion(const char* emotion) override {
+        SpiLcdDisplay::SetEmotion(emotion);
+        DisplayLockGuard lock(this);
+        if (!emotion) return;
+        std::string e(emotion);
+        if (e == "happy" || e == "laughing" || e == "funny") {
+            UpdatePicoColor(lv_color_hex(0x38BDF8), 78, 44, 22, 0);
+        } else if (e == "angry") {
+            UpdatePicoColor(lv_color_hex(0xF43F5E), 74, 58, 16, 180);
+        } else if (e == "sad" || e == "crying") {
+            UpdatePicoColor(lv_color_hex(0x60A5FA), 68, 62, 30, -160);
+        } else if (e == "loving" || e == "kissy") {
+            UpdatePicoColor(lv_color_hex(0xFB7185), 76, 76, 38, 0);
+        } else if (e == "surprised" || e == "shocked") {
+            UpdatePicoColor(lv_color_hex(0x38BDF8), 86, 104, 43, 0);
+        } else if (e == "sleepy") {
+            UpdatePicoColor(lv_color_hex(0x0284C7), 74, 14, 7, 0);
+        } else {
+            UpdatePicoColor(lv_color_hex(0x38BDF8), 72, 92, 36, 0);
+        }
+    }
+
+    virtual void SetChatMessage(const char* role, const char* content) override {
+        SpiLcdDisplay::SetChatMessage(role, content);
+        DisplayLockGuard lock(this);
+        if (sub_label_ && content) {
+            lv_label_set_text(sub_label_, content);
+        }
     }
 };
-
 class CustomBacklight : public Backlight {
 public:
     CustomBacklight(esp_lcd_panel_io_handle_t panel_io) : Backlight(), panel_io_(panel_io) {}
